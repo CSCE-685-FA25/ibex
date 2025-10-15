@@ -508,10 +508,26 @@ class LockedMetadata():
         signal.signal(signal.SIGALRM, self._handler)
         signal.alarm(5)  # 5s
 
-        self.handle = self.pickle_file.open('rb')
-        portalocker.lock(self.handle, portalocker.LockFlags.EXCLUSIVE)
-        logger.info(f"Locking metadata file for {self.file_name}...")
-        self.md = pickle.load(self.handle)
+        # Use a dedicated lock file alongside the pickle. Locking a separate
+        # small lockfile avoids problems with exclusive-locking the pickle
+        # itself (some NFS setups and readonly-opened files can cause
+        # fcntl/flock to fail with EBADF). Create/open the lockfile and lock
+        # that instead, then safely read the pickle.
+        self.lock_file = pathlib.Path(str(self.pickle_file) + '.lock')
+
+        # Ensure the lockfile exists and open a file descriptor we can lock.
+        fd = os.open(str(self.lock_file), os.O_CREAT | os.O_RDWR, 0o666)
+        # Use a binary read-write file object for portability.
+        self.lock_handle = os.fdopen(fd, 'r+b')
+        portalocker.lock(self.lock_handle, portalocker.LockFlags.EXCLUSIVE)
+
+        logger.info(f"Locking metadata (via {self.lock_file.name}) for {self.file_name}...")
+
+        # Now read the actual pickle file without holding its file descriptor
+        # for locking. This avoids requiring write permissions on the pickle
+        # file itself.
+        with self.pickle_file.open('rb') as pf:
+            self.md = pickle.load(pf)
 
         signal.alarm(0)  # Disable the alarm
 
@@ -521,8 +537,20 @@ class LockedMetadata():
         """Close our exclusive access to the file, committing any changes to disk."""
         self.md.export(write_yaml=True)
         logger.info(f"Unlocked in {self.file_name}.")
-        portalocker.unlock(self.handle)
-        self.handle.close()
+        # Unlock and close the lock handle if present. Be defensive in case
+        # __enter__ failed before creating it.
+        try:
+            if hasattr(self, 'lock_handle') and self.lock_handle is not None:
+                try:
+                    portalocker.unlock(self.lock_handle)
+                except Exception:
+                    logger.exception('Failed to unlock lock_handle')
+                try:
+                    self.lock_handle.close()
+                except Exception:
+                    logger.exception('Failed to close lock_handle')
+        except Exception:
+            logger.exception('Error while cleaning up lock handle')
 
 
 if __name__ == '__main__':
