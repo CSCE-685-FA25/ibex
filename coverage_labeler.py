@@ -46,6 +46,7 @@ DEFAULT_METADATA_DIR = (
 )
 DEFAULT_OUTPUT = REPO_ROOT / "coverage_labels.jsonl"
 DEFAULT_LOG_DIR = REPO_ROOT / "cov_labeler_logs"
+DEFAULT_SCRATCH_DIR = REPO_ROOT / ".cov_labeler_tmp"
 
 # We use the repository cov_report.tcl which calls both the legacy textual
 # summary reports and the newer `report_metrics` HTML report. This keeps
@@ -163,6 +164,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         help="Keep intermediate merge data (useful for debugging).",
     )
     parser.add_argument(
+        "--scratch-dir",
+        type=Path,
+        default=DEFAULT_SCRATCH_DIR,
+        help=(
+            "Directory to host temporary merged/report data. "
+            "Defaults to .cov_labeler_tmp under the repo."
+        ),
+    )
+    parser.add_argument(
         "--metrics",
         default=",".join(IBEX_COVERAGE_METRICS),
         help=(
@@ -244,9 +254,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     cumulative_covergroup = 0.0
     trigger_counts = Counter()
 
+    scratch_dir = args.scratch_dir.expanduser().resolve()
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+
     temp_manager: Optional[TemporaryDirectory[str]] = None
     try:
-        temp_manager = TemporaryDirectory(prefix="cov_labeler_")
+        temp_manager = TemporaryDirectory(
+            prefix="cov_labeler_",
+            dir=str(scratch_dir),
+        )
         temp_root = Path(temp_manager.name)
         progress_runfile = temp_root / "progress_runfile.txt"
         merge_dir = temp_root / "merged"
@@ -308,7 +324,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     tail = "\n".join(tail_lines)
                 except Exception:
                     tail = f"Could not read merge log {merge_log}"
-                raise RuntimeError(f"IMC merge failed: {err}\n--- merge log tail ---\n{tail}") from err
+                preserved_runfile = log_dir / f"runfile_{index:05d}.txt"
+                try:
+                    shutil.copy2(progress_runfile, preserved_runfile)
+                except Exception:
+                    preserved_runfile = None
+                extra = (
+                    f"\nRunfile snapshot: {preserved_runfile}" if preserved_runfile else ""
+                )
+                raise RuntimeError(
+                    f"IMC merge failed: {err}\n--- merge log tail ---\n{tail}{extra}"
+                ) from err
 
             if report_dir.exists():
                 shutil.rmtree(report_dir)
