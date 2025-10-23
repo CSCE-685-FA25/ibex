@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, Iterable, List, Optional, Tuple
+from collections import Counter
 
 # Discover the Ibex DV python modules when invoked from lowRISC/
 REPO_ROOT = Path(__file__).resolve().parent
@@ -161,6 +162,32 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         action="store_true",
         help="Keep intermediate merge data (useful for debugging).",
     )
+    parser.add_argument(
+        "--metrics",
+        default=",".join(IBEX_COVERAGE_METRICS),
+        help=(
+            "Comma-separated list of coverage metrics to consider when computing labels. "
+            "Defaults to all functional metrics."
+        ),
+    )
+    parser.add_argument(
+        "--min-covered",
+        type=int,
+        default=1,
+        help=(
+            "Minimum covered delta (per metric) required to treat that metric as a label trigger. "
+            "Set to 0 to match the original behavior."
+        ),
+    )
+    parser.add_argument(
+        "--min-cg-delta",
+        type=float,
+        default=1e-6,
+        help=(
+            "Minimum covergroup delta required to trigger a label. "
+            "Set to 0 to include any positive change."
+        ),
+    )
     args = parser.parse_args(argv)
 
     # RegressionMetadata expects a pathlib3x.Path instance (used across the
@@ -203,10 +230,19 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     env_base = os.environ.copy()
     env_base["DUT_TOP"] = md.dut_cov_rtl_path
 
+    selected_metrics = [m.strip() for m in args.metrics.split(",") if m.strip()]
+    invalid_metrics = [m for m in selected_metrics if m not in IBEX_COVERAGE_METRICS]
+    if invalid_metrics:
+        raise SystemExit(
+            "Unknown metrics specified: " + ", ".join(invalid_metrics) +
+            f". Valid metrics: {', '.join(IBEX_COVERAGE_METRICS)}"
+        )
+
     records: List[Dict[str, object]] = []
     cumulative_counts: Dict[str, float] = {metric: 0.0 for metric in IBEX_COVERAGE_METRICS}
     totals: Dict[str, float] = {metric: 0.0 for metric in IBEX_COVERAGE_METRICS}
     cumulative_covergroup = 0.0
+    trigger_counts = Counter()
 
     temp_manager: Optional[TemporaryDirectory[str]] = None
     try:
@@ -224,10 +260,23 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
         for index, coverage_dir in enumerate(coverage_paths, start=1):
             processed_paths.append(coverage_dir)
-            progress_runfile.write_text(
-                "\n".join(str(path) for path in processed_paths) + "\n",
-                encoding="utf-8",
-            )
+            # Write the progress runfile in plain ASCII (no BOM) because IMC
+            # can reject non-ASCII or otherwise malformed text files with
+            # "not a legal text file" errors. Use newline='\n' and
+            # ignore characters that can't be encoded in ASCII to be robust.
+            with progress_runfile.open("w", encoding="ascii", newline="\n", errors="ignore") as pf:
+                for p in processed_paths:
+                    pf.write(str(p))
+                    pf.write("\n")
+
+            # Sanity-check the runfile contents before invoking IMC so we can
+            # fail early with a helpful message if something is wrong.
+            runfile_lines = [l.strip() for l in progress_runfile.read_text(encoding="ascii", errors="ignore").splitlines() if l.strip()]
+            if not runfile_lines:
+                raise SystemExit(f"Progress runfile {progress_runfile} is empty or unreadable.")
+            for line in runfile_lines:
+                if not Path(line).exists():
+                    raise SystemExit(f"Path listed in runfile does not exist: {line}")
 
             if merge_dir.exists():
                 shutil.rmtree(merge_dir)
@@ -237,19 +286,29 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             merge_env["cov_db_dirs"] = ""
 
             merge_log = log_dir / f"merge_{index:05d}.log"
-            run_imc(
-                [
-                    args.imc_bin,
-                    "-64bit",
-                    "-licqueue",
-                    "-exec",
-                    str(Path(md.ot_xcelium_cov_scripts) / "cov_merge.tcl"),
-                    "-logfile",
-                    str(merge_log),
-                ],
-                merge_env,
-                merge_log,
-            )
+            try:
+                run_imc(
+                    [
+                        args.imc_bin,
+                        "-64bit",
+                        "-licqueue",
+                        "-exec",
+                        str(Path(md.ot_xcelium_cov_scripts) / "cov_merge.tcl"),
+                        "-logfile",
+                        str(merge_log),
+                    ],
+                    merge_env,
+                    merge_log,
+                )
+            except RuntimeError as err:
+                # Show the tail of the merge log to help debugging why IMC
+                # rejected the runfile (or failed for other reasons).
+                try:
+                    tail_lines = Path(merge_log).read_text(encoding="utf-8", errors="ignore").splitlines()[-200:]
+                    tail = "\n".join(tail_lines)
+                except Exception:
+                    tail = f"Could not read merge log {merge_log}"
+                raise RuntimeError(f"IMC merge failed: {err}\n--- merge log tail ---\n{tail}") from err
 
             if report_dir.exists():
                 shutil.rmtree(report_dir)
@@ -283,6 +342,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             coverage_deltas: Dict[str, float] = {}
             pct_before: Dict[str, float] = {}
             pct_after: Dict[str, float] = {}
+            triggers: List[str] = []
 
             for metric, values in metrics.items():
                 if totals[metric] == 0.0:
@@ -292,16 +352,23 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 )
                 pct_after[metric] = values["pct"]
                 coverage_deltas[metric] = values["covered"] - cumulative_counts[metric]
+                if (
+                    metric in selected_metrics
+                    and coverage_deltas[metric] >= args.min_covered
+                ):
+                    triggers.append(metric)
                 cumulative_counts[metric] = values["covered"]
 
             covergroup_before = cumulative_covergroup
             covergroup_delta = covergroup_avg - cumulative_covergroup
             cumulative_covergroup = covergroup_avg
 
-            label = 1 if (
-                any(delta > 0 for delta in coverage_deltas.values())
-                or covergroup_delta > 1e-6
-            ) else 0
+            if covergroup_delta >= args.min_cg_delta:
+                triggers.append("covergroup")
+
+            label = 1 if triggers else 0
+            for trig in triggers or ["none"]:
+                trigger_counts[trig] += 1
 
             test_name = coverage_dir.name
             records.append(
@@ -316,12 +383,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     "covergroup_after": covergroup_avg,
                     "covergroup_delta": covergroup_delta,
                     "label": label,
+                    "triggers": triggers,
                 }
             )
 
             print(
                 f"[{index:05d}/{len(coverage_paths):05d}] {test_name}: "
-                f"label={label} block_delta={coverage_deltas.get('block', 0.0):.0f}"
+                f"label={label} block_delta={coverage_deltas.get('block', 0.0):.0f} "
+                f"triggers={triggers or ['none']}"
             )
 
     finally:
@@ -331,6 +400,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     write_results(args.output.resolve(), records)
     print(f"Wrote {len(records)} labeled records to {args.output}.")
     print(f"Detailed IMC logs: {log_dir}")
+    print("Label summary: " + ", ".join(f"{k}={v}" for k, v in sorted(trigger_counts.items())))
     return 0
 
 
