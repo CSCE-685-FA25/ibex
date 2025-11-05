@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 import pathlib3x as pathlib
-import time
+import re
 
 from ibex_cmd import get_sim_opts
 import riscvdv_interface
@@ -20,6 +20,70 @@ from test_run_result import TestRunResult, Failure_Modes, TestType
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def parse_runtime_from_log(log_file: pathlib.Path, simulator: str) -> float:
+    """Parse the runtime from simulator log file.
+
+    Args:
+        log_file: Path to the RTL simulation log file
+        simulator: Simulator type (e.g., 'xlm', 'vcs')
+
+    Returns:
+        Runtime in seconds as a float, or None if not found
+    """
+    if not log_file.exists():
+        logger.warning(f"Log file does not exist: {log_file}")
+        return None
+
+    try:
+        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            log_content = f.read()
+
+        # Pattern for xrun/xlm simulator
+        # Example: TOOL:   xrun(64)    22.03-s012: Exiting on Nov 04, 2025 at 21:37:58 CST  (total: 00:00:21)
+        xrun_pattern = r'TOOL:\s+xrun.*\(total:\s+(\d+):(\d+):(\d+)\)'
+
+        # Pattern for VCS simulator (if needed)
+        # Example: CPU Time: 0.450 seconds; Data structure size: 0.0Mb
+        vcs_pattern = r'CPU Time:\s+([\d.]+)\s+seconds'
+
+        runtime_s = None
+
+        if simulator in ['xlm', 'xcelium']:
+            match = re.search(xrun_pattern, log_content)
+            if match:
+                hours = int(match.group(1))
+                minutes = int(match.group(2))
+                seconds = int(match.group(3))
+                runtime_s = hours * 3600 + minutes * 60 + seconds
+                logger.debug(f"Parsed xrun runtime: {hours:02d}:{minutes:02d}:{seconds:02d} = {runtime_s}s")
+        elif simulator == 'vcs':
+            match = re.search(vcs_pattern, log_content)
+            if match:
+                runtime_s = float(match.group(1))
+                logger.debug(f"Parsed VCS runtime: {runtime_s}s")
+        else:
+            # Try both patterns for unknown simulators
+            match = re.search(xrun_pattern, log_content)
+            if match:
+                hours = int(match.group(1))
+                minutes = int(match.group(2))
+                seconds = int(match.group(3))
+                runtime_s = hours * 3600 + minutes * 60 + seconds
+            else:
+                match = re.search(vcs_pattern, log_content)
+                if match:
+                    runtime_s = float(match.group(1))
+
+        if runtime_s is None:
+            logger.warning(f"Could not parse runtime from {log_file}")
+
+        return runtime_s
+
+    except Exception as e:
+        logger.warning(f"Error parsing runtime from {log_file}: {e}")
+        return None
 
 
 def _main() -> int:
@@ -99,9 +163,6 @@ def _main() -> int:
     trr.export(write_yaml=True)
 
     # Write all sim_cmd output into a single logfile
-    # Capture start time for runtime measurement
-    start_time = time.time()
-
     with open(trr.rtl_stdout, 'wb') as sim_fd:
 
         try:
@@ -117,9 +178,8 @@ def _main() -> int:
             trr.failure_message = "[FAILURE] Simulation process killed due to timeout " \
                                  f"[{md.run_rtl_timeout_s+60}s].\n"
 
-    # Capture end time and calculate runtime
-    end_time = time.time()
-    trr.runtime_s = end_time - start_time
+    # Parse runtime from the simulator log file
+    trr.runtime_s = parse_runtime_from_log(trr.rtl_log, md.simulator)
 
     trr.export(write_yaml=True)
     # Always return 0 (success), even if the test failed. We've successfully

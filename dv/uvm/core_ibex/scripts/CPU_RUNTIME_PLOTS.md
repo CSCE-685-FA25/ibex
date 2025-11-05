@@ -90,8 +90,9 @@ If matplotlib is not available, the system will gracefully skip plot generation 
 1. **test_run_result.py**: Added `runtime_s: Optional[float]` field to TestRunResult dataclass
 
 2. **run_rtl.py**: Modified to capture CPU runtime
-   - Measures wall-clock time for RTL simulation
-   - Records time before and after simulation execution
+   - Parses runtime from simulator log files (rtl_sim.log)
+   - Supports xrun/Xcelium and VCS log formats
+   - Extracts time in HH:MM:SS or decimal seconds format
    - Stores result in `runtime_s` field
 
 3. **collect_results.py**: Integration with result collection
@@ -113,11 +114,13 @@ If matplotlib is not available, the system will gracefully skip plot generation 
 ```
 Test Execution (run_rtl.py)
     ↓
-Capture start_time and end_time
+Run RTL simulation
     ↓
-Calculate runtime_s = end_time - start_time
+Parse rtl_sim.log for runtime
     ↓
-Store in TestRunResult.runtime_s
+Extract "TOOL: xrun... (total: HH:MM:SS)" or "CPU Time: X.XXX seconds"
+    ↓
+Convert to seconds and store in TestRunResult.runtime_s
     ↓
 Export to pickle/YAML
     ↓
@@ -132,12 +135,28 @@ Save PNG files to output directory
 
 ### Runtime Measurement
 
-Runtime is measured using Python's `time.time()`:
-- Captures wall-clock time (not CPU time)
-- Includes all simulation overhead (file I/O, logging, etc.)
-- Measured in seconds with sub-second precision
-- Starts before RTL simulation commands
-- Ends after all simulation commands complete
+Runtime is extracted from simulator log files after simulation completes:
+
+**Xcelium/xrun Log Format:**
+```
+TOOL:   xrun(64)    22.03-s012: Exiting on Nov 04, 2025 at 21:37:58 CST  (total: 00:00:21)
+```
+- Regex pattern: `TOOL:\s+xrun.*\(total:\s+(\d+):(\d+):(\d+)\)`
+- Extracts hours, minutes, seconds
+- Converts to total seconds: `hours * 3600 + minutes * 60 + seconds`
+
+**VCS Log Format:**
+```
+CPU Time: 0.450 seconds; Data structure size: 0.0Mb
+```
+- Regex pattern: `CPU Time:\s+([\d.]+)\s+seconds`
+- Extracts decimal seconds directly
+
+**Behavior:**
+- Parsed from `dv/uvm/core_ibex/out/run/tests/<testname>/rtl_sim.log`
+- Represents actual simulator execution time (wall-clock)
+- Returns `None` if log parsing fails (warning logged)
+- Supports both simulator formats automatically
 
 ## Interpreting the Plots
 
@@ -190,8 +209,11 @@ Total Runtime: 1h 53m 24s
 ### No Runtime Data
 If plots show "No runtime data available":
 - Make sure tests have been run with the updated `run_rtl.py`
-- Check that test results were successfully written to pickle files
+- Check that `rtl_sim.log` files contain the runtime line:
+  - For xrun: Look for "TOOL: xrun... (total: HH:MM:SS)"
+  - For VCS: Look for "CPU Time: X.XXX seconds"
 - Verify `runtime_s` field is not None in test YAML files
+- Check log warnings for parsing errors
 
 ### Matplotlib Import Errors
 If you see "matplotlib not available":
