@@ -9,6 +9,7 @@ import os
 import sys
 import subprocess
 import pathlib3x as pathlib
+import time
 
 from ibex_cmd import get_sim_opts
 import riscvdv_interface
@@ -98,6 +99,9 @@ def _main() -> int:
     trr.export(write_yaml=True)
 
     # Write all sim_cmd output into a single logfile
+    # Capture start time for runtime measurement
+    start_time = time.time()
+
     with open(trr.rtl_stdout, 'wb') as sim_fd:
 
         try:
@@ -112,6 +116,10 @@ def _main() -> int:
             trr.failure_mode = Failure_Modes.TIMEOUT
             trr.failure_message = "[FAILURE] Simulation process killed due to timeout " \
                                  f"[{md.run_rtl_timeout_s+60}s].\n"
+
+    # Capture end time and calculate runtime
+    end_time = time.time()
+    trr.runtime_s = end_time - start_time
 
     trr.export(write_yaml=True)
     # Always return 0 (success), even if the test failed. We've successfully
