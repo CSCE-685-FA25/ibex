@@ -46,7 +46,6 @@ DEFAULT_METADATA_DIR = (
 )
 DEFAULT_OUTPUT = REPO_ROOT / "coverage_labels.jsonl"
 DEFAULT_LOG_DIR = REPO_ROOT / "cov_labeler_logs"
-DEFAULT_SCRATCH_DIR = REPO_ROOT / ".cov_labeler_tmp"
 
 # We use the repository cov_report.tcl which calls both the legacy textual
 # summary reports and the newer `report_metrics` HTML report. This keeps
@@ -103,10 +102,18 @@ def parse_cov_metrics(report_dir: Path) -> Tuple[Dict[str, Dict[str, float]], fl
     return metrics, covergroup_avg
 
 
-def write_results(output_path: Path, records: List[Dict[str, object]]) -> None:
+def write_results(
+    output_path: Path,
+    records: List[Dict[str, object]],
+    *,
+    append: bool = False,
+) -> None:
     """Write JSONL records to the requested path."""
+    if not records:
+        return
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as handle:
+    mode = "a" if append else "w"
+    with output_path.open(mode, encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(record))
             handle.write("\n")
@@ -166,10 +173,18 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument(
         "--scratch-dir",
         type=Path,
-        default=DEFAULT_SCRATCH_DIR,
+        default=None,
         help=(
-            "Directory to host temporary merged/report data. "
-            "Defaults to .cov_labeler_tmp under the repo."
+            "Optional directory to host temporary merged/report data. "
+            "If omitted, the system temporary directory is used."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume from an existing output JSONL file. Existing entries are "
+            "validated against the runfile and skipped."
         ),
     )
     parser.add_argument(
@@ -228,8 +243,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     if args.limit:
         coverage_paths = coverage_paths[: args.limit]
 
-    print(f"Processing {len(coverage_paths)} coverage databases...")
-
     waiver_script = Path(md.ibex_dv_root) / "waivers" / "coverage_waivers_xlm.tcl"
     if not waiver_script.exists():
         raise SystemExit(f"Waiver script not found at {waiver_script}.")
@@ -254,14 +267,67 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     cumulative_covergroup = 0.0
     trigger_counts = Counter()
 
-    scratch_dir = args.scratch_dir.expanduser().resolve()
-    scratch_dir.mkdir(parents=True, exist_ok=True)
+    processed_count = 0
+    if args.resume and args.output.exists():
+        with args.output.open("r", encoding="utf-8") as existing:
+            for line in existing:
+                line = line.strip()
+                if not line:
+                    continue
+                if processed_count >= len(coverage_paths):
+                    raise SystemExit(
+                        "Existing output has more entries than coverage runfile."
+                    )
+                record = json.loads(line)
+                expected_path = str(coverage_paths[processed_count])
+                if record.get("coverage_path") != expected_path:
+                    raise SystemExit(
+                        "Coverage path mismatch when resuming: "
+                        f"expected {expected_path} but found {record.get('coverage_path')}"
+                    )
+                deltas = record.get("covered_deltas", {})
+                metrics_after = record.get("metrics_after", {})
+                for metric in IBEX_COVERAGE_METRICS:
+                    delta = float(deltas.get(metric, 0.0))
+                    cumulative_counts[metric] += delta
+                    pct_after = metrics_after.get(metric)
+                    if totals[metric] == 0.0 and pct_after:
+                        # Avoid division by zero; pct_after is already 0-1.
+                        if pct_after > 0:
+                            totals[metric] = cumulative_counts[metric] / pct_after
+                        else:
+                            totals[metric] = 0.0
+                cumulative_covergroup = record.get(
+                    "covergroup_after", cumulative_covergroup
+                )
+                triggers_existing = record.get("triggers") or []
+                for trig in triggers_existing or ["none"]:
+                    trigger_counts[trig] += 1
+                processed_count += 1
+        print(f"Resuming from {processed_count} existing records in {args.output}.")
+    elif not args.resume and args.output.exists():
+        raise SystemExit(
+            f"Output file {args.output} already exists. Use --resume or remove it first."
+        )
+
+    output_path = args.output.resolve()
+
+    remaining = len(coverage_paths) - processed_count
+    print(
+        f"Processing {remaining} coverage databases "
+        f"(total: {len(coverage_paths)}, already done: {processed_count})."
+    )
+
+    scratch_dir: Optional[Path] = None
+    if args.scratch_dir is not None:
+        scratch_dir = args.scratch_dir.expanduser().resolve()
+        scratch_dir.mkdir(parents=True, exist_ok=True)
 
     temp_manager: Optional[TemporaryDirectory[str]] = None
     try:
         temp_manager = TemporaryDirectory(
             prefix="cov_labeler_",
-            dir=str(scratch_dir),
+            dir=str(scratch_dir) if scratch_dir else None,
         )
         temp_root = Path(temp_manager.name)
         progress_runfile = temp_root / "progress_runfile.txt"
@@ -272,9 +338,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         if not cov_report_tcl.exists():
             raise SystemExit(f"cov_report.tcl not found at {cov_report_tcl}")
 
-        processed_paths: List[Path] = []
+        processed_paths: List[Path] = list(coverage_paths[:processed_count])
 
-        for index, coverage_dir in enumerate(coverage_paths, start=1):
+        if processed_count >= len(coverage_paths):
+            print("All coverage databases already processed. Nothing to do.")
+            return 0
+
+        for index, coverage_dir in enumerate(
+            coverage_paths[processed_count:], start=processed_count + 1
+        ):
             processed_paths.append(coverage_dir)
             # Write the progress runfile in plain ASCII (no BOM) because IMC
             # can reject non-ASCII or otherwise malformed text files with
@@ -413,6 +485,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 }
             )
 
+            append_mode = processed_count > 0 or len(records) > 1
+            write_results(output_path, [records[-1]], append=append_mode)
+
             print(
                 f"[{index:05d}/{len(coverage_paths):05d}] {test_name}: "
                 f"label={label} block_delta={coverage_deltas.get('block', 0.0):.0f} "
@@ -423,8 +498,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         if temp_manager and not args.keep_temp:
             temp_manager.cleanup()
 
-    write_results(args.output.resolve(), records)
-    print(f"Wrote {len(records)} labeled records to {args.output}.")
+    total_processed = processed_count + len(records)
+    print(
+        f"Processed {len(records)} new entries (total processed: {total_processed})."
+    )
     print(f"Detailed IMC logs: {log_dir}")
     print("Label summary: " + ", ".join(f"{k}={v}" for k, v in sorted(trigger_counts.items())))
     return 0
