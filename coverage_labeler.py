@@ -19,9 +19,10 @@ from tempfile import TemporaryDirectory
 from typing import Dict, Iterable, List, Optional, Tuple
 from collections import Counter
 
-# Discover the Ibex DV python modules when invoked from lowRISC/
-REPO_ROOT = Path(__file__).resolve().parent
-IBEX_ROOT = REPO_ROOT / "ibex"
+# Discover the Ibex DV python modules - script now lives in ibex/
+SCRIPT_DIR = Path(__file__).resolve().parent  # ibex directory
+IBEX_ROOT = SCRIPT_DIR  # Script is now inside ibex directory
+REPO_ROOT = SCRIPT_DIR.parent  # lowRISC workspace root
 IBEX_UTIL = IBEX_ROOT / "util"
 CORE_IBEX_SCRIPTS = IBEX_ROOT / "dv" / "uvm" / "core_ibex" / "scripts"
 REPORT_LIB = CORE_IBEX_SCRIPTS / "report_lib"
