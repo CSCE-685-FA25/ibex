@@ -56,11 +56,16 @@ ls out/run/*.png
 
 ### Manual Plot Generation
 
-You can regenerate plots from existing test results using the standalone script:
+You can regenerate plots from existing test results using the standalone script.
+
+**Run from anywhere** (script handles paths automatically):
 
 ```bash
 # Basic usage
 ./dv/uvm/core_ibex/scripts/plot_cpu_runtime.py --dir-metadata out/metadata
+
+# Or with absolute path
+python3 dv/uvm/core_ibex/scripts/plot_cpu_runtime.py --dir-metadata out/metadata
 
 # Specify custom output directory
 ./dv/uvm/core_ibex/scripts/plot_cpu_runtime.py \
@@ -72,6 +77,8 @@ You can regenerate plots from existing test results using the standalone script:
     --dir-metadata out/metadata \
     --verbose
 ```
+
+**Note**: The script automatically adds the necessary directories to the Python path, so it can be run from any location.
 
 ### Requirements
 
