@@ -17,8 +17,14 @@ Example:
 
 import argparse
 import sys
+import os
 import pathlib3x as pathlib
 from typing import List
+
+# Add the scripts directory to Python path to enable imports
+script_dir = pathlib.Path(__file__).parent.resolve()
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
 
 from metadata import RegressionMetadata, LockedMetadata
 from test_run_result import TestRunResult
