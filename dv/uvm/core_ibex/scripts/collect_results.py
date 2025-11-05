@@ -18,6 +18,7 @@ from report_lib.text import output_results_text, gen_summary_line
 from report_lib.html import output_results_html
 from report_lib.junit_xml import output_run_results_junit_xml
 from report_lib.dvsim_json import output_results_dvsim_json
+from report_lib.matplotlib_plots import output_results_matplotlib
 
 try:
     # SVG requires python 3.7 and above, for environments that don't have python
@@ -109,6 +110,10 @@ def main() -> int:
                         svg_summary_file)
         else:
             print('WARNING: svg module not available, skipping SVG results output')
+
+        # Generate matplotlib runtime plots
+        all_tests = passing_tests + failing_tests
+        output_results_matplotlib(all_tests, md.dir_run)
 
         # Print a summary line to the terminal
         print(gen_summary_line(passing_tests, failing_tests))

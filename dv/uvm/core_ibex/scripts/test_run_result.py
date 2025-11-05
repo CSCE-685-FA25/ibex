@@ -49,6 +49,7 @@ class TestRunResult(scripts_lib.testdata_cls):
     failure_mode: Optional[Failure_Modes] = None
     failure_message: Optional[str] = None
     timeout_s: Optional[int] = None
+    runtime_s: Optional[float] = None            # Actual CPU runtime in seconds
 
     testtype: Optional[TestType] = None
     testdotseed: Optional[str] = None
