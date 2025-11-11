@@ -19,18 +19,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, Iterable, List, Optional, Tuple
 
-<<<<<<< HEAD:coverage_labeler.py
-# Discover the Ibex DV python modules - script now lives in ibex/
-SCRIPT_DIR = Path(__file__).resolve().parent  # ibex directory
-IBEX_ROOT = SCRIPT_DIR  # Script is now inside ibex directory
-REPO_ROOT = SCRIPT_DIR.parent  # lowRISC workspace root
-=======
 # Discover the Ibex DV python modules
 # This script is now located in dv/uvm/core_ibex/scripts/
 CORE_IBEX_SCRIPTS = Path(__file__).resolve().parent
 IBEX_ROOT = CORE_IBEX_SCRIPTS.parent.parent.parent.parent
 REPO_ROOT = IBEX_ROOT.parent
->>>>>>> c8acf447 (Moving scripts to dv/uvm/core_ibex/scripts):dv/uvm/core_ibex/scripts/coverage_labeler.py
 IBEX_UTIL = IBEX_ROOT / "util"
 REPORT_LIB = CORE_IBEX_SCRIPTS / "report_lib"
 RISCV_DV_SCRIPTS = IBEX_ROOT / "vendor" / "google_riscv-dv" / "scripts"
