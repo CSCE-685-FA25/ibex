@@ -25,7 +25,8 @@ set dut [string trim $::env(DUT_TOP)]
 set dut_uc [string toupper $dut]
 
 # Generate the text report (summary is sufficient).
-report -summary \
+report_metrics \
+  -summary \
   -inst uvm_pkg $dut \
   -metrics all \
   -all \
@@ -35,7 +36,8 @@ report -summary \
   -out $cov_report_dir/cov_report.txt
 
 # Generate the functional coverage report for tracking.
-report -summary \
+report_metrics \
+  -summary \
   -type \
   -all \
   -metrics covergroup \
@@ -57,4 +59,4 @@ report_metrics \
   -all
 
 # rank the test runs
-rank -runfile $cov_merge_db_dir/cov_db_runfile -out_txt $cov_report_dir/grading
+rank -runfile $cov_merge_db_dir/cov_db_runfile -out_txt $cov_report_dir/grading/runs_ranked.txt
