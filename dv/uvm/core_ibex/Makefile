@@ -29,7 +29,7 @@ SEED                := $(shell echo $$RANDOM)
 # Enable waveform dumping
 WAVES               := 0
 # Enable coverage dump
-COV                 := 0
+COV                 := 1
 # RTL simulator (xlm, vcs, questa, dsim, )
 SIMULATOR           := xlm
 # ISS (spike, ovpsim)

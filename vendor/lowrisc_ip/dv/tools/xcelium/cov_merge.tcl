@@ -4,14 +4,6 @@
 
 # Merge coverage with IMC, across tests, scopes and previous regression runs.
 
-# Set the input coverage directories across all available scopes and previous runs,
-# using the env var 'cov_db_dirs' (which is a space separated list of directories).
-# Append each of these directories with /* wildcard at the end to allow the tool to
-# find all available test databases.
-set cov_db_dirs_env [string trim $::env(cov_db_dirs) " \"'"]
-foreach i $cov_db_dirs_env { append cov_db_dirs "[string trim $i]/* "; }
-puts "Input coverage directories:\n$cov_db_dirs"
-
 # Set the output directory for the merged database using the env var 'cov_merge_db_dir'.
 # The supplied env var may have quotes or spaces that needs to be trimmed.
 puts "Output directory for merged coverage:"
@@ -21,10 +13,18 @@ set cov_merge_db_dir [string trim $::env(cov_merge_db_dir) " \"'"]
 if { [info exists ::env(cov_db_runfile)] } {
   merge -runfile $::env(cov_db_runfile) -out $cov_merge_db_dir -overwrite -initial_model union_all
 } else {
+  # Set the input coverage directories across all available scopes and previous runs,
+  # using the env var 'cov_db_dirs' (which is a space separated list of directories).
+  # Append each of these directories with /* wildcard at the end to allow the tool to
+  # find all available test databases.
+  set cov_db_dirs_env [string trim $::env(cov_db_dirs) " \"'"]
+  foreach i $cov_db_dirs_env { append cov_db_dirs "[string trim $i]/* "; }
+  puts "Input coverage directories:\n$cov_db_dirs"
   merge $cov_db_dirs -out $cov_merge_db_dir -overwrite -initial_model union_all
+
+  # Create a file with the path to the cover dirs
+  set filepointer [open "$cov_merge_db_dir/runs.txt" w]
+  puts $filepointer "$cov_db_dirs"
+  close $filepointer
 }
 
-# Create a file with the path to the cover dirs
-set filepointer [open "$cov_merge_db_dir/runs.txt" w]
-puts $filepointer "$cov_db_dirs"
-close $filepointer

@@ -19,6 +19,7 @@ typeguard ~= 2.13
 portalocker
 pydantic >= 2
 svg.py
+matplotlib
 
 # Needed by dvsim.py (not actually used in Ibex)
 hjson

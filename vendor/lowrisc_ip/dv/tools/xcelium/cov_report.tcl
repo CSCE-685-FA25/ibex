@@ -25,7 +25,7 @@ set dut [string trim $::env(DUT_TOP)]
 set dut_uc [string toupper $dut]
 
 # Generate the text report (summary is sufficient).
-report_metrics \
+report \
   -summary \
   -inst uvm_pkg $dut \
   -metrics all \
@@ -36,7 +36,7 @@ report_metrics \
   -out $cov_report_dir/cov_report.txt
 
 # Generate the functional coverage report for tracking.
-report_metrics \
+report \
   -summary \
   -type \
   -all \
