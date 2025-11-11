@@ -14,18 +14,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import pickle
 import re
 import sys
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from collections import Counter
-import pickle
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # Discover the Ibex DV python modules
-REPO_ROOT = Path(__file__).resolve().parent
-IBEX_ROOT = REPO_ROOT / "ibex"
+# This script is now located in dv/uvm/core_ibex/scripts/
+CORE_IBEX_SCRIPTS = Path(__file__).resolve().parent
+IBEX_ROOT = CORE_IBEX_SCRIPTS.parent.parent.parent.parent
 IBEX_UTIL = IBEX_ROOT / "util"
-CORE_IBEX_SCRIPTS = IBEX_ROOT / "dv" / "uvm" / "core_ibex" / "scripts"
 
 # Ensure the common ibex utility dir is on sys.path
 for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, IBEX_ROOT):
@@ -34,9 +34,9 @@ for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, IBEX_ROOT):
 
 # Import after path setup
 try:
-    from metadata import RegressionMetadata  # type: ignore
-    from test_run_result import TestRunResult, TestType, Failure_Modes  # type: ignore
     import pathlib3x as pathlib3x
+    from metadata import RegressionMetadata  # type: ignore
+    from test_run_result import Failure_Modes, TestRunResult, TestType  # type: ignore
 except ImportError as e:
     print(f"Warning: Could not import ibex modules: {e}")
     print("Feature extraction will be limited to log parsing only.")
@@ -68,9 +68,7 @@ def extract_test_metadata_features(test_result: Any) -> Dict[str, Any]:
     features["timeout_s"] = test_result.timeout_s
 
     # Test configuration
-    features["test_type"] = (
-        test_result.testtype.name if test_result.testtype else None
-    )
+    features["test_type"] = test_result.testtype.name if test_result.testtype else None
     features["test_name"] = test_result.testname
     features["seed"] = test_result.seed
     features["simulator"] = test_result.rtl_simulator
@@ -159,9 +157,25 @@ def parse_trace_csv(csv_path: Path) -> Dict[str, Any]:
     jump_instrs = {"jal", "jalr"}
     system_instrs = {"ecall", "ebreak", "mret", "wfi", "csrrw", "csrrs", "csrrc"}
     arithmetic_instrs = {
-        "add", "sub", "and", "or", "xor", "sll", "srl", "sra",
-        "addi", "andi", "ori", "xori", "slli", "srli", "srai",
-        "mul", "mulh", "div", "rem"
+        "add",
+        "sub",
+        "and",
+        "or",
+        "xor",
+        "sll",
+        "srl",
+        "sra",
+        "addi",
+        "andi",
+        "ori",
+        "xori",
+        "slli",
+        "srli",
+        "srai",
+        "mul",
+        "mulh",
+        "div",
+        "rem",
     }
 
     unique_pcs = set()
@@ -219,7 +233,9 @@ def compute_derived_features(features: Dict[str, Any]) -> Dict[str, Any]:
         ) / total_instrs
         derived["jump_ratio"] = features.get("trace_jump_count", 0) / total_instrs
         derived["system_ratio"] = features.get("trace_system_count", 0) / total_instrs
-        derived["arithmetic_ratio"] = features.get("trace_arithmetic_count", 0) / total_instrs
+        derived["arithmetic_ratio"] = (
+            features.get("trace_arithmetic_count", 0) / total_instrs
+        )
     else:
         derived["branch_ratio"] = 0.0
         derived["load_ratio"] = 0.0
@@ -254,9 +270,7 @@ def compute_derived_features(features: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def find_test_result_pickle(
-    metadata_dir: Path,
-    testdotseed: str,
-    coverage_path: str
+    metadata_dir: Path, testdotseed: str, coverage_path: str
 ) -> Optional[Path]:
     """Find the TestRunResult pickle file for a given test."""
     # Try direct path from testdotseed
@@ -393,7 +407,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 records.append(json.loads(line))
 
     if args.limit:
-        records = records[:args.limit]
+        records = records[: args.limit]
 
     print(f"Processing {len(records)} records...")
 
@@ -401,7 +415,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     augmented_records = []
     for i, record in enumerate(records, 1):
         if args.verbose or i % 100 == 0:
-            print(f"  [{i}/{len(records)}] Processing {record.get('testdotseed', 'unknown')}...")
+            print(
+                f"  [{i}/{len(records)}] Processing {record.get('testdotseed', 'unknown')}..."
+            )
 
         try:
             augmented = augment_coverage_record(record, args.metadata)
@@ -426,8 +442,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         sample = augmented_records[0]
         print("\nFeature groups added:")
         print(f"  - test_metadata: {len(sample.get('test_metadata', {}))} features")
-        print(f"  - execution_features: {len(sample.get('execution_features', {}))} features")
-        print(f"  - derived_features: {len(sample.get('derived_features', {}))} features")
+        print(
+            f"  - execution_features: {len(sample.get('execution_features', {}))} features"
+        )
+        print(
+            f"  - derived_features: {len(sample.get('derived_features', {}))} features"
+        )
 
         if args.verbose:
             print("\nSample augmented record (first test):")

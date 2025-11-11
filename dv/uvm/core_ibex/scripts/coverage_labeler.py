@@ -14,23 +14,36 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, Iterable, List, Optional, Tuple
-from collections import Counter
 
+<<<<<<< HEAD:coverage_labeler.py
 # Discover the Ibex DV python modules - script now lives in ibex/
 SCRIPT_DIR = Path(__file__).resolve().parent  # ibex directory
 IBEX_ROOT = SCRIPT_DIR  # Script is now inside ibex directory
 REPO_ROOT = SCRIPT_DIR.parent  # lowRISC workspace root
+=======
+# Discover the Ibex DV python modules
+# This script is now located in dv/uvm/core_ibex/scripts/
+CORE_IBEX_SCRIPTS = Path(__file__).resolve().parent
+IBEX_ROOT = CORE_IBEX_SCRIPTS.parent.parent.parent.parent
+REPO_ROOT = IBEX_ROOT.parent
+>>>>>>> c8acf447 (Moving scripts to dv/uvm/core_ibex/scripts):dv/uvm/core_ibex/scripts/coverage_labeler.py
 IBEX_UTIL = IBEX_ROOT / "util"
-CORE_IBEX_SCRIPTS = IBEX_ROOT / "dv" / "uvm" / "core_ibex" / "scripts"
 REPORT_LIB = CORE_IBEX_SCRIPTS / "report_lib"
 RISCV_DV_SCRIPTS = IBEX_ROOT / "vendor" / "google_riscv-dv" / "scripts"
 
 # Ensure the common ibex utility dir is on sys.path so imports such as
 # `import ibex_config` succeed. Also add core scripts and report_lib.
-for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, REPORT_LIB, RISCV_DV_SCRIPTS, IBEX_ROOT):
+for module_path in (
+    IBEX_UTIL,
+    CORE_IBEX_SCRIPTS,
+    REPORT_LIB,
+    RISCV_DV_SCRIPTS,
+    IBEX_ROOT,
+):
     if str(module_path) not in sys.path:
         sys.path.insert(0, str(module_path))
 
@@ -42,17 +55,16 @@ from report_lib.util import (  # type: ignore  # noqa: E402
     parse_xcelium_cov_report,
 )
 
-DEFAULT_METADATA_DIR = (
-    IBEX_ROOT / "dv" / "uvm" / "core_ibex" / "out" / "metadata"
-)
-DEFAULT_OUTPUT = REPO_ROOT / "coverage_labels.jsonl"
-DEFAULT_LOG_DIR = REPO_ROOT / "cov_labeler_logs"
-DEFAULT_SCRATCH_DIR = REPO_ROOT / ".cov_labeler_tmp"
+DEFAULT_METADATA_DIR = CORE_IBEX_SCRIPTS.parent / "out" / "metadata"
+DEFAULT_OUTPUT = IBEX_ROOT / "coverage_labels.jsonl"
+DEFAULT_LOG_DIR = IBEX_ROOT / "cov_labeler_logs"
+DEFAULT_SCRATCH_DIR = IBEX_ROOT / ".cov_labeler_tmp"
 
 # We use the repository cov_report.tcl which calls both the legacy textual
 # summary reports and the newer `report_metrics` HTML report. This keeps
 # behavior identical to the DV flow while avoiding maintaining a separate
 # Tcl snippet here.
+
 
 def run_imc(cmd: List[str], env: Dict[str, str], log_path: Path) -> None:
     """Run an IMC command and capture stdout/err into log_path."""
@@ -245,12 +257,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     invalid_metrics = [m for m in selected_metrics if m not in IBEX_COVERAGE_METRICS]
     if invalid_metrics:
         raise SystemExit(
-            "Unknown metrics specified: " + ", ".join(invalid_metrics) +
-            f". Valid metrics: {', '.join(IBEX_COVERAGE_METRICS)}"
+            "Unknown metrics specified: "
+            + ", ".join(invalid_metrics)
+            + f". Valid metrics: {', '.join(IBEX_COVERAGE_METRICS)}"
         )
 
     records: List[Dict[str, object]] = []
-    cumulative_counts: Dict[str, float] = {metric: 0.0 for metric in IBEX_COVERAGE_METRICS}
+    cumulative_counts: Dict[str, float] = {
+        metric: 0.0 for metric in IBEX_COVERAGE_METRICS
+    }
     totals: Dict[str, float] = {metric: 0.0 for metric in IBEX_COVERAGE_METRICS}
     cumulative_covergroup = 0.0
     trigger_counts = Counter()
@@ -281,16 +296,26 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             # can reject non-ASCII or otherwise malformed text files with
             # "not a legal text file" errors. Use newline='\n' and
             # ignore characters that can't be encoded in ASCII to be robust.
-            with progress_runfile.open("w", encoding="ascii", newline="\n", errors="ignore") as pf:
+            with progress_runfile.open(
+                "w", encoding="ascii", newline="\n", errors="ignore"
+            ) as pf:
                 for p in processed_paths:
                     pf.write(str(p))
                     pf.write("\n")
 
             # Sanity-check the runfile contents before invoking IMC so we can
             # fail early with a helpful message if something is wrong.
-            runfile_lines = [l.strip() for l in progress_runfile.read_text(encoding="ascii", errors="ignore").splitlines() if l.strip()]
+            runfile_lines = [
+                l.strip()
+                for l in progress_runfile.read_text(
+                    encoding="ascii", errors="ignore"
+                ).splitlines()
+                if l.strip()
+            ]
             if not runfile_lines:
-                raise SystemExit(f"Progress runfile {progress_runfile} is empty or unreadable.")
+                raise SystemExit(
+                    f"Progress runfile {progress_runfile} is empty or unreadable."
+                )
             for line in runfile_lines:
                 if not Path(line).exists():
                     raise SystemExit(f"Path listed in runfile does not exist: {line}")
@@ -321,7 +346,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 # Show the tail of the merge log to help debugging why IMC
                 # rejected the runfile (or failed for other reasons).
                 try:
-                    tail_lines = Path(merge_log).read_text(encoding="utf-8", errors="ignore").splitlines()[-200:]
+                    tail_lines = (
+                        Path(merge_log)
+                        .read_text(encoding="utf-8", errors="ignore")
+                        .splitlines()[-200:]
+                    )
                     tail = "\n".join(tail_lines)
                 except Exception:
                     tail = f"Could not read merge log {merge_log}"
@@ -331,7 +360,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 except Exception:
                     preserved_runfile = None
                 extra = (
-                    f"\nRunfile snapshot: {preserved_runfile}" if preserved_runfile else ""
+                    f"\nRunfile snapshot: {preserved_runfile}"
+                    if preserved_runfile
+                    else ""
                 )
                 raise RuntimeError(
                     f"IMC merge failed: {err}\n--- merge log tail ---\n{tail}{extra}"
@@ -375,7 +406,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 if totals[metric] == 0.0:
                     totals[metric] = values["total"]
                 pct_before[metric] = (
-                    cumulative_counts[metric] / totals[metric] if totals[metric] else 0.0
+                    cumulative_counts[metric] / totals[metric]
+                    if totals[metric]
+                    else 0.0
                 )
                 pct_after[metric] = values["pct"]
                 coverage_deltas[metric] = values["covered"] - cumulative_counts[metric]
@@ -427,7 +460,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     write_results(args.output.resolve(), records)
     print(f"Wrote {len(records)} labeled records to {args.output}.")
     print(f"Detailed IMC logs: {log_dir}")
-    print("Label summary: " + ", ".join(f"{k}={v}" for k, v in sorted(trigger_counts.items())))
+    print(
+        "Label summary: "
+        + ", ".join(f"{k}={v}" for k, v in sorted(trigger_counts.items()))
+    )
     return 0
 
 
