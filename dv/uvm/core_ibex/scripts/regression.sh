@@ -8,6 +8,6 @@
 #SBATCH --qos=olympus-cpu-research        # Do not change
 #SBATCH --partition=cpu-research      # Do not change
 
-source env_setup.bash
+source ../../../../env_setup.bash
 
-make -C ibex/dv/uvm/core_ibex/ run SIMULATION=xlm TEST=all WAVES=0 COV=1
+make -C ../ run SIMULATION=xlm TEST=all WAVES=0 COV=1
