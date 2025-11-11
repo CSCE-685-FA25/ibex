@@ -59,4 +59,4 @@ report_metrics \
   -all
 
 # rank the test runs
-rank -runfile $cov_merge_db_dir/cov_db_runfile -out_txt $cov_report_dir/grading/runs_ranked.txt
+rank -runfile $cov_merge_db_dir/../cov_db_runfile -html -out_html $cov_report_dir/grading
