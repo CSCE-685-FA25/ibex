@@ -10,5 +10,4 @@
 
 source ~/lowRISC/ibex/env_setup.bash
 
-#make -C ../ run SIMULATION=xlm TEST=all WAVES=0 COV=1
-make -C ~/lowRISC/ibex/dv/uvm/core_ibex run SIMULATION=xlm TEST=riscv_machine_mode_rand_test ITERATIONS=10 COV=1
+make -C ~/lowRISC/ibex/dv/uvm/core_ibex run SIMULATION=xlm TEST=all WAVES=0 COV=1
