@@ -118,10 +118,17 @@ def label_coverage_contributions(
             f"Expected simulator 'xlm' but regression used '{md.simulator}'."
         )
 
+    if md.cov_merge_db_list is None:
+        raise ValueError(
+            "Coverage merge database list not found in metadata. "
+            "Did you run the regression with COV=1 and merge coverage?"
+        )
+
     cov_runfile = Path(md.cov_merge_db_list)
     if not cov_runfile.exists():
         raise FileNotFoundError(
-            "Coverage runfile missing. Did you run the regression with COV=1?"
+            f"Coverage runfile missing: {cov_runfile}. "
+            "Did you run the regression with COV=1 and merge coverage?"
         )
 
     coverage_paths = select_coverage_paths(pathlib3x.Path(str(cov_runfile)))
@@ -129,6 +136,9 @@ def label_coverage_contributions(
         raise ValueError("No coverage databases found in runfile.")
     if limit:
         coverage_paths = coverage_paths[:limit]
+
+    if md.ibex_dv_root is None:
+        raise ValueError("ibex_dv_root not found in metadata.")
 
     waiver_script = Path(md.ibex_dv_root) / "waivers" / "coverage_waivers_xlm.tcl"
     if not waiver_script.exists():
@@ -171,6 +181,10 @@ def label_coverage_contributions(
         progress_runfile = temp_root / "progress_runfile.txt"
         merge_dir = temp_root / "merged"
         report_dir = temp_root / "report"
+
+        if md.ot_xcelium_cov_scripts is None:
+            raise ValueError("ot_xcelium_cov_scripts not found in metadata.")
+
         cov_report_tcl = Path(md.ot_xcelium_cov_scripts) / "cov_report.tcl"
         if not cov_report_tcl.exists():
             raise FileNotFoundError(f"cov_report.tcl not found at {cov_report_tcl}")
@@ -290,4 +304,3 @@ def label_coverage_contributions(
             temp_manager.cleanup()
 
     return records
-
