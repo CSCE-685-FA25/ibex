@@ -16,8 +16,9 @@ from typing import List, Set
 CORE_IBEX_SCRIPTS = Path(__file__).resolve().parent
 IBEX_ROOT = CORE_IBEX_SCRIPTS.parent.parent.parent.parent
 IBEX_UTIL = IBEX_ROOT / "util"
+RISCV_DV_SCRIPTS = IBEX_ROOT / "vendor" / "google_riscv-dv" / "scripts"
 
-for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, IBEX_ROOT):
+for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, RISCV_DV_SCRIPTS, IBEX_ROOT):
     if str(module_path) not in sys.path:
         sys.path.insert(0, str(module_path))
 
