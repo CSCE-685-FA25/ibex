@@ -1,23 +1,20 @@
-#!/usr/bin/env python3
 """Label Ibex regression tests by their coverage contribution.
 
-Run this script from the lowRISC workspace root (one level above ``ibex``).
-It replays the coverage merge using Cadence IMC for the selected tests and
-records whether each test improves the cumulative coverage metrics.
+This module provides functions to replay the coverage merge using Cadence IMC
+for the selected tests and record whether each test improves the cumulative
+coverage metrics.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
 import subprocess
 import sys
-from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Discover the Ibex DV python modules
 # This script is now located in dv/uvm/core_ibex/scripts/
@@ -41,40 +38,13 @@ for module_path in (
         sys.path.insert(0, str(module_path))
 
 # pylint: disable=wrong-import-position
+from merge_cov import select_coverage_paths  # type: ignore  # noqa: E402
 from metadata import RegressionMetadata  # type: ignore  # noqa: E402
 from report_lib.util import (  # type: ignore  # noqa: E402
     IBEX_COVERAGE_METRICS,
     calc_cg_average,
     parse_xcelium_cov_report,
 )
-
-DEFAULT_METADATA_DIR = CORE_IBEX_SCRIPTS.parent / "out" / "metadata"
-DEFAULT_OUTPUT = IBEX_ROOT / "coverage_labels.jsonl"
-DEFAULT_LOG_DIR = IBEX_ROOT / "cov_labeler_logs"
-DEFAULT_SCRATCH_DIR = IBEX_ROOT / ".cov_labeler_tmp"
-
-# We use the repository cov_report.tcl which calls both the legacy textual
-# summary reports and the newer `report_metrics` HTML report. This keeps
-# behavior identical to the DV flow while avoiding maintaining a separate
-# Tcl snippet here.
-
-
-def run_imc(cmd: List[str], env: Dict[str, str], log_path: Path) -> None:
-    """Run an IMC command and capture stdout/err into log_path."""
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("w", encoding="utf-8") as log:
-        process = subprocess.run(
-            cmd,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            env=env,
-            check=False,
-        )
-    if process.returncode != 0:
-        raise RuntimeError(
-            f"Command {' '.join(cmd)} failed with code {process.returncode}.\n"
-            f"See {log_path} for details."
-        )
 
 
 def parse_cov_metrics(report_dir: Path) -> Tuple[Dict[str, Dict[str, float]], float]:
@@ -109,150 +79,82 @@ def parse_cov_metrics(report_dir: Path) -> Tuple[Dict[str, Dict[str, float]], fl
     return metrics, covergroup_avg
 
 
-def write_results(output_path: Path, records: List[Dict[str, object]]) -> None:
-    """Write JSONL records to the requested path."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record))
-            handle.write("\n")
+def label_coverage_contributions(
+    metadata_dir: Path,
+    imc_bin: str = "/opt/coe/cadence/VMANAGER/bin/imc",
+    limit: Optional[int] = None,
+    selected_metrics: Optional[List[str]] = None,
+    min_covered: int = 1,
+    min_cg_delta: float = 1e-6,
+    log_dir: Optional[Path] = None,
+    scratch_dir: Optional[Path] = None,
+    keep_temp: bool = False,
+) -> List[Dict[str, object]]:
+    """Label tests by their coverage contribution.
 
+    Args:
+        metadata_dir: Path to regression metadata directory
+        imc_bin: Path to IMC binary
+        limit: Optional cap on number of tests to process
+        selected_metrics: List of metrics to track (defaults to all)
+        min_covered: Minimum covered delta to trigger a label
+        min_cg_delta: Minimum covergroup delta to trigger a label
+        log_dir: Directory for IMC logs (defaults to out/cov_labeler_logs)
+        scratch_dir: Temporary directory (defaults to out/.cov_labeler_tmp)
+        keep_temp: Keep temporary files for debugging
 
-def select_coverage_paths(runfile: Path) -> List[Path]:
-    """Return absolute coverage directories in the order tests were merged."""
-    selected: List[Path] = []
-    for line in runfile.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or "coverage/fcov" in line:
-            continue
-        cov_dir = Path(line)
-        if cov_dir.exists():
-            selected.append(cov_dir)
-    return selected
-
-
-def main(argv: Optional[Iterable[str]] = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Replay coverage merge and label tests by coverage gain."
-    )
-    parser.add_argument(
-        "--metadata",
-        type=Path,
-        default=DEFAULT_METADATA_DIR,
-        help="Path to the regression metadata directory (metadata.yaml lives here).",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=DEFAULT_OUTPUT,
-        help="Destination JSONL file for labeled results.",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Optional cap on number of coverage databases processed (for quick dry runs).",
-    )
-    parser.add_argument(
-        "--imc-bin",
-        default="imc",
-        help="Cadence IMC binary to invoke (default: imc).",
-    )
-    parser.add_argument(
-        "--log-dir",
-        type=Path,
-        default=DEFAULT_LOG_DIR,
-        help="Directory to store merge/report logs.",
-    )
-    parser.add_argument(
-        "--keep-temp",
-        action="store_true",
-        help="Keep intermediate merge data (useful for debugging).",
-    )
-    parser.add_argument(
-        "--scratch-dir",
-        type=Path,
-        default=DEFAULT_SCRATCH_DIR,
-        help=(
-            "Directory to host temporary merged/report data. "
-            "Defaults to .cov_labeler_tmp under the repo."
-        ),
-    )
-    parser.add_argument(
-        "--metrics",
-        default=",".join(IBEX_COVERAGE_METRICS),
-        help=(
-            "Comma-separated list of coverage metrics to consider when computing labels. "
-            "Defaults to all functional metrics."
-        ),
-    )
-    parser.add_argument(
-        "--min-covered",
-        type=int,
-        default=1,
-        help=(
-            "Minimum covered delta (per metric) required to treat that metric as a label trigger. "
-            "Set to 0 to match the original behavior."
-        ),
-    )
-    parser.add_argument(
-        "--min-cg-delta",
-        type=float,
-        default=1e-6,
-        help=(
-            "Minimum covergroup delta required to trigger a label. "
-            "Set to 0 to include any positive change."
-        ),
-    )
-    args = parser.parse_args(argv)
-
-    # RegressionMetadata expects a pathlib3x.Path instance (used across the
-    # ibex scripts). Convert the user-supplied pathlib.Path into the
-    # required type to avoid typeguard errors.
+    Returns:
+        List of labeled test records
+    """
     import pathlib3x as pathlib3x
 
-    metadata_dir = args.metadata.resolve()
-    metadata_dir = pathlib3x.Path(str(metadata_dir))
+    metadata_dir = pathlib3x.Path(str(metadata_dir.resolve()))
     if not metadata_dir.exists():
-        raise SystemExit(f"Metadata directory {metadata_dir} does not exist.")
+        raise FileNotFoundError(f"Metadata directory {metadata_dir} does not exist.")
 
     md = RegressionMetadata.construct_from_metadata_dir(metadata_dir)
     if md.simulator != "xlm":
-        raise SystemExit(
+        raise ValueError(
             f"Expected simulator 'xlm' but regression used '{md.simulator}'."
         )
 
     cov_runfile = Path(md.cov_merge_db_list)
     if not cov_runfile.exists():
-        raise SystemExit(
+        raise FileNotFoundError(
             "Coverage runfile missing. Did you run the regression with COV=1?"
         )
 
-    coverage_paths = select_coverage_paths(cov_runfile)
+    coverage_paths = select_coverage_paths(pathlib3x.Path(str(cov_runfile)))
     if not coverage_paths:
-        raise SystemExit("No coverage databases found in runfile.")
-    if args.limit:
-        coverage_paths = coverage_paths[: args.limit]
-
-    print(f"Processing {len(coverage_paths)} coverage databases...")
+        raise ValueError("No coverage databases found in runfile.")
+    if limit:
+        coverage_paths = coverage_paths[:limit]
 
     waiver_script = Path(md.ibex_dv_root) / "waivers" / "coverage_waivers_xlm.tcl"
     if not waiver_script.exists():
-        raise SystemExit(f"Waiver script not found at {waiver_script}.")
+        raise FileNotFoundError(f"Waiver script not found at {waiver_script}.")
 
-    log_dir = args.log_dir.resolve()
+    if log_dir is None:
+        log_dir = CORE_IBEX_SCRIPTS.parent / "out" / "cov_labeler_logs"
+    log_dir = log_dir.resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    if scratch_dir is None:
+        scratch_dir = CORE_IBEX_SCRIPTS.parent / "out" / ".cov_labeler_tmp"
+    scratch_dir = scratch_dir.expanduser().resolve()
+    scratch_dir.mkdir(parents=True, exist_ok=True)
 
     env_base = os.environ.copy()
     env_base["DUT_TOP"] = md.dut_cov_rtl_path
 
-    selected_metrics = [m.strip() for m in args.metrics.split(",") if m.strip()]
+    if selected_metrics is None:
+        selected_metrics = list(IBEX_COVERAGE_METRICS)
+
     invalid_metrics = [m for m in selected_metrics if m not in IBEX_COVERAGE_METRICS]
     if invalid_metrics:
-        raise SystemExit(
-            "Unknown metrics specified: "
-            + ", ".join(invalid_metrics)
-            + f". Valid metrics: {', '.join(IBEX_COVERAGE_METRICS)}"
+        raise ValueError(
+            f"Unknown metrics: {', '.join(invalid_metrics)}. "
+            f"Valid metrics: {', '.join(IBEX_COVERAGE_METRICS)}"
         )
 
     records: List[Dict[str, object]] = []
@@ -261,57 +163,29 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     }
     totals: Dict[str, float] = {metric: 0.0 for metric in IBEX_COVERAGE_METRICS}
     cumulative_covergroup = 0.0
-    trigger_counts = Counter()
-
-    scratch_dir = args.scratch_dir.expanduser().resolve()
-    scratch_dir.mkdir(parents=True, exist_ok=True)
 
     temp_manager: Optional[TemporaryDirectory[str]] = None
     try:
-        temp_manager = TemporaryDirectory(
-            prefix="cov_labeler_",
-            dir=str(scratch_dir),
-        )
+        temp_manager = TemporaryDirectory(prefix="cov_labeler_", dir=str(scratch_dir))
         temp_root = Path(temp_manager.name)
         progress_runfile = temp_root / "progress_runfile.txt"
         merge_dir = temp_root / "merged"
         report_dir = temp_root / "report"
-        # Use the repository-provided cov_report.tcl for reporting.
         cov_report_tcl = Path(md.ot_xcelium_cov_scripts) / "cov_report.tcl"
         if not cov_report_tcl.exists():
-            raise SystemExit(f"cov_report.tcl not found at {cov_report_tcl}")
+            raise FileNotFoundError(f"cov_report.tcl not found at {cov_report_tcl}")
 
         processed_paths: List[Path] = []
 
         for index, coverage_dir in enumerate(coverage_paths, start=1):
             processed_paths.append(coverage_dir)
-            # Write the progress runfile in plain ASCII (no BOM) because IMC
-            # can reject non-ASCII or otherwise malformed text files with
-            # "not a legal text file" errors. Use newline='\n' and
-            # ignore characters that can't be encoded in ASCII to be robust.
+
             with progress_runfile.open(
                 "w", encoding="ascii", newline="\n", errors="ignore"
             ) as pf:
                 for p in processed_paths:
                     pf.write(str(p))
                     pf.write("\n")
-
-            # Sanity-check the runfile contents before invoking IMC so we can
-            # fail early with a helpful message if something is wrong.
-            runfile_lines = [
-                l.strip()
-                for l in progress_runfile.read_text(
-                    encoding="ascii", errors="ignore"
-                ).splitlines()
-                if l.strip()
-            ]
-            if not runfile_lines:
-                raise SystemExit(
-                    f"Progress runfile {progress_runfile} is empty or unreadable."
-                )
-            for line in runfile_lines:
-                if not Path(line).exists():
-                    raise SystemExit(f"Path listed in runfile does not exist: {line}")
 
             if merge_dir.exists():
                 shutil.rmtree(merge_dir)
@@ -321,10 +195,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             merge_env["cov_db_dirs"] = ""
 
             merge_log = log_dir / f"merge_{index:05d}.log"
-            try:
-                run_imc(
+            merge_log.parent.mkdir(parents=True, exist_ok=True)
+            with merge_log.open("w", encoding="utf-8") as log:
+                process = subprocess.run(
                     [
-                        args.imc_bin,
+                        imc_bin,
                         "-64bit",
                         "-licqueue",
                         "-exec",
@@ -332,133 +207,87 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                         "-logfile",
                         str(merge_log),
                     ],
-                    merge_env,
-                    merge_log,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=merge_env,
+                    check=False,
                 )
-            except RuntimeError as err:
-                # Show the tail of the merge log to help debugging why IMC
-                # rejected the runfile (or failed for other reasons).
-                try:
-                    tail_lines = (
-                        Path(merge_log)
-                        .read_text(encoding="utf-8", errors="ignore")
-                        .splitlines()[-200:]
-                    )
-                    tail = "\n".join(tail_lines)
-                except Exception:
-                    tail = f"Could not read merge log {merge_log}"
-                preserved_runfile = log_dir / f"runfile_{index:05d}.txt"
-                try:
-                    shutil.copy2(progress_runfile, preserved_runfile)
-                except Exception:
-                    preserved_runfile = None
-                extra = (
-                    f"\nRunfile snapshot: {preserved_runfile}"
-                    if preserved_runfile
-                    else ""
-                )
+            if process.returncode != 0:
                 raise RuntimeError(
-                    f"IMC merge failed: {err}\n--- merge log tail ---\n{tail}{extra}"
-                ) from err
+                    f"IMC merge failed with code {process.returncode}. See {merge_log}"
+                )
 
             if report_dir.exists():
                 shutil.rmtree(report_dir)
-            report_dir.mkdir(parents=True, exist_ok=True)
-
+            report_dir.mkdir(parents=True)
             report_env = env_base.copy()
-            report_env["cov_merge_db_dir"] = str(merge_dir)
             report_env["cov_report_dir"] = str(report_dir)
 
             report_log = log_dir / f"report_{index:05d}.log"
-            run_imc(
-                [
-                    args.imc_bin,
-                    "-64bit",
-                    "-licqueue",
-                    "-load",
-                    str(merge_dir),
-                    "-init",
-                    str(waiver_script),
-                    "-exec",
-                    str(cov_report_tcl),
-                    "-logfile",
-                    str(report_log),
-                ],
-                report_env,
-                report_log,
-            )
+            with report_log.open("w", encoding="utf-8") as log:
+                process = subprocess.run(
+                    [
+                        imc_bin,
+                        "-64bit",
+                        "-licqueue",
+                        "-load",
+                        str(merge_dir),
+                        "-init",
+                        str(waiver_script),
+                        "-exec",
+                        str(cov_report_tcl),
+                        "-logfile",
+                        str(report_log),
+                    ],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=report_env,
+                    check=False,
+                )
+            if process.returncode != 0:
+                raise RuntimeError(
+                    f"IMC report failed with code {process.returncode}. See {report_log}"
+                )
 
             metrics, covergroup_avg = parse_cov_metrics(report_dir)
 
             coverage_deltas: Dict[str, float] = {}
-            pct_before: Dict[str, float] = {}
-            pct_after: Dict[str, float] = {}
             triggers: List[str] = []
 
-            for metric, values in metrics.items():
-                if totals[metric] == 0.0:
-                    totals[metric] = values["total"]
-                pct_before[metric] = (
-                    cumulative_counts[metric] / totals[metric]
-                    if totals[metric]
-                    else 0.0
-                )
-                pct_after[metric] = values["pct"]
-                coverage_deltas[metric] = values["covered"] - cumulative_counts[metric]
-                if (
-                    metric in selected_metrics
-                    and coverage_deltas[metric] >= args.min_covered
-                ):
-                    triggers.append(metric)
-                cumulative_counts[metric] = values["covered"]
+            for metric_name in selected_metrics:
+                if metric_name not in metrics:
+                    continue
+                covered = metrics[metric_name]["covered"]
+                total = metrics[metric_name]["total"]
+                if totals[metric_name] == 0:
+                    totals[metric_name] = total
 
-            covergroup_before = cumulative_covergroup
-            covergroup_delta = covergroup_avg - cumulative_covergroup
+                delta_covered = covered - cumulative_counts[metric_name]
+                if delta_covered >= min_covered:
+                    triggers.append(metric_name)
+                    coverage_deltas[metric_name] = delta_covered
+
+                cumulative_counts[metric_name] = covered
+
+            cg_delta = covergroup_avg - cumulative_covergroup
+            if cg_delta >= min_cg_delta:
+                triggers.append("covergroup")
+                coverage_deltas["covergroup"] = cg_delta
             cumulative_covergroup = covergroup_avg
 
-            if covergroup_delta >= args.min_cg_delta:
-                triggers.append("covergroup")
-
-            label = 1 if triggers else 0
-            for trig in triggers or ["none"]:
-                trigger_counts[trig] += 1
-
-            test_name = coverage_dir.name
-            records.append(
-                {
-                    "index": index,
-                    "testdotseed": test_name,
-                    "coverage_path": str(coverage_dir),
-                    "metrics_before": pct_before,
-                    "metrics_after": pct_after,
-                    "covered_deltas": coverage_deltas,
-                    "covergroup_before": covergroup_before,
-                    "covergroup_after": covergroup_avg,
-                    "covergroup_delta": covergroup_delta,
-                    "label": label,
-                    "triggers": triggers,
-                }
-            )
-
-            print(
-                f"[{index:05d}/{len(coverage_paths):05d}] {test_name}: "
-                f"label={label} block_delta={coverage_deltas.get('block', 0.0):.0f} "
-                f"triggers={triggers or ['none']}"
-            )
+            testdotseed = coverage_dir.name
+            record: Dict[str, object] = {
+                "testdotseed": testdotseed,
+                "coverage_path": str(coverage_dir),
+                "labels": triggers,
+                "deltas": coverage_deltas,
+                "cumulative_covergroup": cumulative_covergroup,
+            }
+            records.append(record)
 
     finally:
-        if temp_manager and not args.keep_temp:
+        if temp_manager and not keep_temp:
             temp_manager.cleanup()
 
-    write_results(args.output.resolve(), records)
-    print(f"Wrote {len(records)} labeled records to {args.output}.")
-    print(f"Detailed IMC logs: {log_dir}")
-    print(
-        "Label summary: "
-        + ", ".join(f"{k}={v}" for k, v in sorted(trigger_counts.items()))
-    )
-    return 0
+    return records
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())

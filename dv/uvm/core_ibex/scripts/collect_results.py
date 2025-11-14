@@ -4,14 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import dataclasses
-import io
 import sys
-from typing import Dict, List, TextIO
 
 import pathlib3x as pathlib
-import scripts_lib as ibex_lib
-from metadata import LockedMetadata, RegressionMetadata
+from metadata import LockedMetadata
 from report_lib.dvsim_json import output_results_dvsim_json
 from report_lib.html import output_results_html
 from report_lib.junit_xml import output_run_results_junit_xml
@@ -25,7 +21,7 @@ try:
     # 3.7 (e.g. CentOS 7) detect failure to import and just skip any svg
     # generation.
     import svg
-    from report_lib.svg import output_results_svg
+    from report_lib.svg import output_results_svg  # type: ignore
 
     SVG_MODULE_PRESENT = True
 except ImportError:
@@ -62,7 +58,7 @@ def main() -> int:
                     failing_tests.append(trr)
             except RuntimeError as e:
                 failing_tests.append(
-                    TestRunResult(name="broken_test", failure_message=str(e))
+                    TestRunResult(testname="broken_test", failure_message=str(e))
                 )
 
         md.regr_log = md.dir_run / "regr.log"
@@ -86,7 +82,9 @@ def main() -> int:
 
         cov_summary_dict = {}
         if md.simulator == "xlm":
-            cov_summary_dict = create_cov_summary_dict(md)
+            cov_summary_dict = {
+                k: float(v) for k, v in create_cov_summary_dict(md).items()
+            }
         else:
             print(
                 "Warning: Not generating coverage summary, unsupported "

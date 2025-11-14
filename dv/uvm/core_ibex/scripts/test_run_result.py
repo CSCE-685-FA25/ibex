@@ -4,15 +4,15 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 
-from enum import Enum
-import pathlib3x as pathlib
-from typing import Optional, List
 import dataclasses
+import logging
+from enum import Enum
+from typing import List, Optional
+
+import pathlib3x as pathlib
+import scripts_lib
 from typeguard import typechecked
 
-import scripts_lib
-
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +33,8 @@ class Failure_Modes(Enum):
 
     def __str__(self):
         """Print enumerated values as e.g. TIMEOUT(1)"""
-        return f'{self.name}({self.value})'
+        return f"{self.name}({self.value})"
+
 
 @typechecked
 @dataclasses.dataclass
@@ -44,20 +45,21 @@ class TestRunResult(scripts_lib.testdata_cls):
     the simulations, but they may be optional in that we haven't yet
     populated the field or generated the item yet.
     """
-    passed: Optional[bool] = None                # True if test passed
+
+    passed: Optional[bool] = None  # True if test passed
     # Message describing failure, includes a '[FAILED]: XXXX' line at the end.
     failure_mode: Optional[Failure_Modes] = None
     failure_message: Optional[str] = None
     timeout_s: Optional[int] = None
-    runtime_s: Optional[float] = None            # Actual CPU runtime in seconds
+    runtime_s: Optional[float] = None  # Actual CPU runtime in seconds
 
     testtype: Optional[TestType] = None
     testdotseed: Optional[str] = None
-    testname: Optional[str] = None        # Name of test
-    seed: Optional[int] = None            # Seed of test
-    binary: Optional[pathlib.Path] = None # Path to test binary
-    rtl_simulator: Optional[str] = None   # Which simulator is used
-    iss_cosim: Optional[str] = None       # Which ISS are we cosimulating with?
+    testname: Optional[str] = None  # Name of test
+    seed: Optional[int] = None  # Seed of test
+    binary: Optional[pathlib.Path] = None  # Path to test binary
+    rtl_simulator: Optional[str] = None  # Which simulator is used
+    iss_cosim: Optional[str] = None  # Which ISS are we cosimulating with?
 
     # Options for discrete debug module memory heirarchy
     is_discrete_debug_module: Optional[bool] = None
@@ -77,7 +79,7 @@ class TestRunResult(scripts_lib.testdata_cls):
     directed_data: Optional[dict] = None
 
     dir_test: Optional[pathlib.Path] = None
-    assembly: Optional[pathlib.Path] = None         # Path to assembly file
+    assembly: Optional[pathlib.Path] = None  # Path to assembly file
     objectfile: Optional[pathlib.Path] = None
 
     riscvdv_run_gen_log: Optional[pathlib.Path] = None
@@ -87,9 +89,9 @@ class TestRunResult(scripts_lib.testdata_cls):
     compile_asm_gen_log: Optional[pathlib.Path] = None
     compile_asm_log: Optional[pathlib.Path] = None
 
-    rtl_log: Optional[pathlib.Path] = None          # Path to UVM DV simulation log
+    rtl_log: Optional[pathlib.Path] = None  # Path to UVM DV simulation log
     rtl_stdout: Optional[pathlib.Path] = None
-    rtl_trace: Optional[pathlib.Path] = None        # Path to RTL ibex trace output
+    rtl_trace: Optional[pathlib.Path] = None  # Path to RTL ibex trace output
     iss_cosim_log: Optional[pathlib.Path] = None
     iss_cosim_trace: Optional[pathlib.Path] = None  # Path to cosim_trace logfile
 
@@ -104,6 +106,16 @@ class TestRunResult(scripts_lib.testdata_cls):
     metadata_pickle_file: pathlib.Path = None
     pickle_file: Optional[pathlib.Path] = None
     yaml_file: Optional[pathlib.Path] = None
+
+    # Coverage report paths for this test (point to files, don't duplicate data)
+    coverage_metrics_json: Optional[pathlib.Path] = (
+        None  # Path to coverage_metrics.json
+    )
+    coverage_report_txt: Optional[pathlib.Path] = None  # Path to cov_report.txt
+    coverage_report_cg: Optional[pathlib.Path] = None  # Path to cov_report_cg.txt
+    coverage_report_inst: Optional[pathlib.Path] = (
+        None  # Path to cov_report_instances.txt
+    )
 
     @classmethod
     @typechecked
@@ -122,7 +134,7 @@ class TestRunResult(scripts_lib.testdata_cls):
         """
         relative_dict = {}
         for k, v in dataclasses.asdict(self).items():
-            if (isinstance(v, pathlib.Path) and v.is_relative_to(self.dir_test)):
+            if isinstance(v, pathlib.Path) and v.is_relative_to(self.dir_test):
                 relative_dict[k] = str(v.relative_to(self.dir_test))
             else:
                 relative_dict[k] = v

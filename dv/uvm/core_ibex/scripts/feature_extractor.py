@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import pickle
 import re
 import sys
-from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,7 +33,13 @@ for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, IBEX_ROOT):
 # Import after path setup
 try:
     import pathlib3x as pathlib3x
+    from coverage_labeler import label_coverage_contributions  # type: ignore
     from metadata import RegressionMetadata  # type: ignore
+    from report_lib.util import (  # type: ignore
+        find_test_result_pickle,
+        load_test_result,
+        write_jsonl,
+    )
     from test_run_result import Failure_Modes, TestRunResult, TestType  # type: ignore
 except ImportError as e:
     print(f"Warning: Could not import ibex modules: {e}")
@@ -44,6 +48,10 @@ except ImportError as e:
     TestRunResult = None
     TestType = None
     Failure_Modes = None
+    label_coverage_contributions = None
+    write_jsonl = None
+    find_test_result_pickle = None
+    load_test_result = None
 
 
 # Regex patterns for log parsing
@@ -269,48 +277,6 @@ def compute_derived_features(features: Dict[str, Any]) -> Dict[str, Any]:
     return derived
 
 
-def find_test_result_pickle(
-    metadata_dir: Path, testdotseed: str, coverage_path: str
-) -> Optional[Path]:
-    """Find the TestRunResult pickle file for a given test."""
-    # Try direct path from testdotseed
-    pickle_path = metadata_dir / f"{testdotseed}.pickle"
-    if pickle_path.exists():
-        return pickle_path
-
-    # Try to extract from coverage_path
-    # Coverage path format: .../run/coverage/testname.seed/...
-    cov_path = Path(coverage_path)
-    if "coverage" in cov_path.parts:
-        # Extract testdotseed from path
-        for i, part in enumerate(cov_path.parts):
-            if part == "coverage" and i + 1 < len(cov_path.parts):
-                possible_testdotseed = cov_path.parts[i + 1]
-                pickle_path = metadata_dir / f"{possible_testdotseed}.pickle"
-                if pickle_path.exists():
-                    return pickle_path
-
-    return None
-
-
-def load_test_result(pickle_path: Path) -> Optional[Any]:
-    """Load TestRunResult from pickle file."""
-    if not pickle_path or not pickle_path.exists():
-        return None
-
-    try:
-        if TestRunResult and pathlib3x:
-            # Use the TestRunResult class method
-            return TestRunResult.construct_from_pickle(pathlib3x.Path(str(pickle_path)))
-        else:
-            # Fallback to direct pickle loading
-            with open(pickle_path, "rb") as f:
-                return pickle.load(f)
-    except Exception as e:
-        print(f"Warning: Could not load test result from {pickle_path}: {e}")
-        return None
-
-
 def augment_coverage_record(
     record: Dict[str, Any],
     metadata_dir: Optional[Path],
@@ -360,31 +326,30 @@ def augment_coverage_record(
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Augment coverage labels with additional ML features."
-    )
-    parser.add_argument(
-        "--input",
-        type=Path,
-        required=True,
-        help="Input coverage_labels.jsonl file from coverage_labeler.py.",
+        description="Label tests by coverage contribution and extract ML features."
     )
     parser.add_argument(
         "--output",
         type=Path,
         required=True,
-        help="Output JSONL file with augmented features.",
+        help="Output JSONL file with coverage labels and augmented features.",
     )
     parser.add_argument(
         "--metadata",
         type=Path,
-        default=None,
-        help="Path to regression metadata directory (contains test pickle files).",
+        default=CORE_IBEX_SCRIPTS.parent / "out" / "metadata",
+        help="Path to regression metadata directory (default: dv/uvm/core_ibex/out/metadata).",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Optional limit on number of records to process (for testing).",
+        help="Optional limit on number of tests to process (for testing).",
+    )
+    parser.add_argument(
+        "--imc-bin",
+        default="/opt/coe/cadence/VMANAGER/bin/imc",
+        help="Cadence IMC binary to invoke (default: /opt/coe/cadence/VMANAGER/bin/imc).",
     )
     parser.add_argument(
         "--verbose",
@@ -394,22 +359,25 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if not args.input.exists():
-        print(f"Error: Input file {args.input} does not exist.")
+    # Step 1: Label coverage contributions
+    print("Step 1: Labeling coverage contributions...")
+    print(f"  Metadata directory: {args.metadata}")
+
+    try:
+        records = label_coverage_contributions(
+            metadata_dir=args.metadata,
+            imc_bin=args.imc_bin,
+            limit=args.limit,
+        )
+    except Exception as e:
+        print(f"Error during coverage labeling: {e}")
         return 1
 
-    # Read input JSONL
-    print(f"Reading coverage labels from {args.input}...")
-    records = []
-    with open(args.input, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
+    print(f"  Labeled {len(records)} tests")
 
-    if args.limit:
-        records = records[: args.limit]
-
-    print(f"Processing {len(records)} records...")
+    # Step 2: Extract features
+    print("\nStep 2: Extracting features from test metadata and logs...")
+    print(f"  Processing {len(records)} records...")
 
     # Augment each record
     augmented_records = []
@@ -428,19 +396,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             augmented_records.append(record)
 
     # Write output JSONL
-    print(f"Writing augmented features to {args.output}...")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as f:
-        for record in augmented_records:
-            f.write(json.dumps(record))
-            f.write("\n")
+    print(f"\nStep 3: Writing results to {args.output}...")
+    write_jsonl(args.output, augmented_records)
 
-    print(f"Successfully wrote {len(augmented_records)} augmented records.")
+    print(f"\nSuccessfully processed {len(augmented_records)} tests.")
+    print(f"Output saved to: {args.output}")
 
     # Print feature summary
     if augmented_records:
         sample = augmented_records[0]
-        print("\nFeature groups added:")
+        print("\nFeature groups included:")
+        print(f"  - coverage_labels: {len(sample.get('labels', []))} labels")
         print(f"  - test_metadata: {len(sample.get('test_metadata', {}))} features")
         print(
             f"  - execution_features: {len(sample.get('execution_features', {}))} features"
