@@ -9,7 +9,17 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import List, Set
+
+# Add ibex paths to sys.path
+CORE_IBEX_SCRIPTS = Path(__file__).resolve().parent
+IBEX_ROOT = CORE_IBEX_SCRIPTS.parent.parent.parent.parent
+IBEX_UTIL = IBEX_ROOT / "util"
+
+for module_path in (IBEX_UTIL, CORE_IBEX_SCRIPTS, IBEX_ROOT):
+    if str(module_path) not in sys.path:
+        sys.path.insert(0, str(module_path))
 
 import pathlib3x as pathlib
 from metadata import LockedMetadata, RegressionMetadata
