@@ -1,0 +1,192 @@
+Loading data...
+Loaded 1528 samples
+
+Preparing features...
+Using 34 features
+Feature names: alu_count, alu_fraction, atomic_count, atomic_fraction, branch_count, branch_fraction, compressed_count, compressed_fraction, csr_count, csr_fraction...
+
+Class distribution:
+  Class 0: 1284 samples (84.03%)
+  Class 1: 244 samples (15.97%)
+
+Applying smote for class balancing...
+Training set after balancing: 2054 samples
+
+================================================================================
+TRAINING AND EVALUATING MODELS
+================================================================================
+
+Random Forest:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.7680
+  Precision: 0.2105
+  Recall:    0.1633
+  F1 Score:  0.1839
+  ROC-AUC:   0.5598
+  Training time: 1.08s
+
+Extra Trees:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.7582
+  Precision: 0.1951
+  Recall:    0.1633
+  F1 Score:  0.1778
+  ROC-AUC:   0.5584
+  Training time: 0.52s
+
+Gradient Boosting:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.7582
+  Precision: 0.1951
+  Recall:    0.1633
+  F1 Score:  0.1778
+  ROC-AUC:   0.5491
+  Training time: 4.49s
+
+XGBoost:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.6895
+  Precision: 0.1714
+  Recall:    0.2449
+  F1 Score:  0.2017
+  ROC-AUC:   0.5395
+  Training time: 0.41s
+
+LightGBM:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.7680
+  Precision: 0.2105
+  Recall:    0.1633
+  F1 Score:  0.1839
+  ROC-AUC:   0.5418
+  Training time: 0.21s
+
+AdaBoost:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.7320
+  Precision: 0.2609
+  Recall:    0.3673
+  F1 Score:  0.3051
+  ROC-AUC:   0.5878
+  Training time: 0.74s
+
+Logistic Regression:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.4673
+  Precision: 0.1798
+  Recall:    0.6531
+  F1 Score:  0.2819
+  ROC-AUC:   0.5390
+  Training time: 0.04s
+
+SVM (RBF):
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.1765
+  Precision: 0.1605
+  Recall:    0.9796
+  F1 Score:  0.2759
+  ROC-AUC:   0.4681
+  Training time: 0.82s
+
+Neural Network:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.1765
+  Precision: 0.1628
+  Recall:    1.0000
+  F1 Score:  0.2800
+  ROC-AUC:   0.5097
+  Training time: 0.18s
+
+Decision Tree:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.7222
+  Precision: 0.2907
+  Recall:    0.5102
+  F1 Score:  0.3704
+  ROC-AUC:   0.6261
+  Training time: 0.05s
+
+Gaussian Naive Bayes:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.2418
+  Precision: 0.1573
+  Recall:    0.8571
+  F1 Score:  0.2658
+  ROC-AUC:   0.5224
+  Training time: 0.00s
+
+K-Nearest Neighbors:
+----------------------------------------
+  Performing 5-fold cross-validation...
+  Accuracy:  0.6144
+  Precision: 0.1584
+  Recall:    0.3265
+  F1 Score:  0.2133
+  ROC-AUC:   0.4562
+  Training time: 0.00s
+
+================================================================================
+RESULTS SUMMARY (sorted by F1 Score)
+================================================================================
+               model  accuracy  precision   recall       f1  roc_auc
+       Decision Tree  0.722222   0.290698 0.510204 0.370370 0.626062
+            AdaBoost  0.732026   0.260870 0.367347 0.305085 0.587787
+ Logistic Regression  0.467320   0.179775 0.653061 0.281938 0.538990
+      Neural Network  0.176471   0.162791 1.000000 0.280000 0.509728
+           SVM (RBF)  0.176471   0.160535 0.979592 0.275862 0.468078
+Gaussian Naive Bayes  0.241830   0.157303 0.857143 0.265823 0.522393
+ K-Nearest Neighbors  0.614379   0.158416 0.326531 0.213333 0.456166
+             XGBoost  0.689542   0.171429 0.244898 0.201681 0.539466
+       Random Forest  0.767974   0.210526 0.163265 0.183908 0.559795
+            LightGBM  0.767974   0.210526 0.163265 0.183908 0.541849
+   Gradient Boosting  0.758170   0.195122 0.163265 0.177778 0.549075
+         Extra Trees  0.758170   0.195122 0.163265 0.177778 0.558405
+
+Results saved to tuned_results/model_comparison_results.csv
+
+================================================================================
+HYPERPARAMETER TUNING FOR TOP MODELS
+================================================================================
+
+Tuning XGBoost...
+Best parameters: {'colsample_bytree': 0.8, 'learning_rate': 0.1, 'max_depth': 7, 'n_estimators': 300, 'scale_pos_weight': 1, 'subsample': 0.9}
+Best CV F1 Score: 0.8811
+Test F1 Score: 0.1758
+
+Tuning LightGBM...
+Best parameters: {'learning_rate': 0.1, 'min_child_samples': 5, 'n_estimators': 300, 'num_leaves': 63, 'subsample': 0.7}
+Best CV F1 Score: 0.8903
+Test F1 Score: 0.1628
+
+Tuning Random Forest...
+Best parameters: {'max_depth': 20, 'max_features': 'sqrt', 'min_samples_leaf': 1, 'min_samples_split': 2, 'n_estimators': 300}
+Best CV F1 Score: 0.8736
+Test F1 Score: 0.1860
+
+Generating visualizations...
+
+Best model (Decision Tree) saved to tuned_results/best_model.joblib
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+1. Best performing model: Decision Tree
+   - F1 Score: 0.3704
+   - ROC-AUC: 0.6261
+
+2. For minimizing false positives (high precision): Decision Tree
+3. For minimizing false negatives (high recall): Neural Network
+
+================================================================================
+Model comparison complete!
