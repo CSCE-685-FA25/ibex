@@ -1,0 +1,85 @@
+Using device: cpu
+Loading data...
+Loaded 1528 samples with 34 features
+Class distribution: {np.int32(0): np.int64(1284), np.int32(1): np.int64(244)}
+
+================================================================================
+TRAINING DEEP LEARNING MODELS
+================================================================================
+
+Training Basic NN...
+----------------------------------------
+Number of parameters: 15,330
+Epoch 10/100: Train Loss: 0.6724, Val F1: 0.2542, Val Acc: 0.6408
+Early stopping triggered at epoch 17
+Test Performance:
+  Accuracy:  0.6765
+  Precision: 0.2159
+  Recall:    0.3878
+  F1 Score:  0.2774
+  ROC-AUC:   0.5936
+
+Training ResNet...
+----------------------------------------
+Number of parameters: 113,858
+Epoch 10/100: Train Loss: 0.6365, Val F1: 0.2568, Val Acc: 0.5510
+Early stopping triggered at epoch 17
+Test Performance:
+  Accuracy:  0.6634
+  Precision: 0.2245
+  Recall:    0.4490
+  F1 Score:  0.2993
+  ROC-AUC:   0.6053
+
+Training Simple Attention...
+----------------------------------------
+Number of parameters: 29,826
+Epoch 10/100: Train Loss: 0.6796, Val F1: 0.2301, Val Acc: 0.6449
+Epoch 20/100: Train Loss: 0.6510, Val F1: 0.2400, Val Acc: 0.6122
+Early stopping triggered at epoch 27
+Test Performance:
+  Accuracy:  0.6438
+  Precision: 0.2059
+  Recall:    0.4286
+  F1 Score:  0.2781
+  ROC-AUC:   0.5838
+
+Training Gated NN...
+----------------------------------------
+Number of parameters: 25,986
+Epoch 10/100: Train Loss: 0.6522, Val F1: 0.2542, Val Acc: 0.6408
+Early stopping triggered at epoch 16
+Test Performance:
+  Accuracy:  0.6634
+  Precision: 0.2188
+  Recall:    0.4286
+  F1 Score:  0.2897
+  ROC-AUC:   0.5857
+
+Training Ensemble...
+----------------------------------------
+Number of parameters: 26,356
+Epoch 10/100: Train Loss: 0.6518, Val F1: 0.2564, Val Acc: 0.6449
+Early stopping triggered at epoch 17
+Test Performance:
+  Accuracy:  0.6601
+  Precision: 0.2043
+  Recall:    0.3878
+  F1 Score:  0.2676
+  ROC-AUC:   0.5810
+
+================================================================================
+RESULTS SUMMARY (Deep Learning Models)
+================================================================================
+           model  accuracy  precision   recall       f1  roc_auc
+          ResNet  0.663399   0.224490 0.448980 0.299320 0.605297
+        Gated NN  0.663399   0.218750 0.428571 0.289655 0.585683
+Simple Attention  0.643791   0.205882 0.428571 0.278146 0.583777
+        Basic NN  0.676471   0.215909 0.387755 0.277372 0.593623
+        Ensemble  0.660131   0.204301 0.387755 0.267606 0.580997
+
+Results saved to dl_results/dl_results.csv
+
+Best performing model: ResNet
+  F1 Score: 0.2993
+  ROC-AUC: 0.6053
